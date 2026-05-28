@@ -9,6 +9,8 @@ UI-framework agnostic: heights and offsets are plain `u16` values measured in te
 - What's the smallest scroll offset that keeps row N visible?
 - The user clicked at viewport `y` — which row did they hit?
 
+![](./SCR-20260529-bvkh.png)
+
 ## When you need this
 
 You're using [ratatui](https://github.com/ratatui/ratatui) (or any TUI lib) and your list has:
