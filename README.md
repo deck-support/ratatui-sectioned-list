@@ -100,4 +100,4 @@ Pre-1.0. The surface is small and intentionally minimal; API changes are possibl
 
 ## License
 
-MIT OR Apache-2.0
+Apache-2.0 — see [LICENSE](./LICENSE).
