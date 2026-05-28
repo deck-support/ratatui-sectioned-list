@@ -262,11 +262,7 @@ impl<T> SectionedList<T> {
     /// Iteration stops early once an item begins at or below the
     /// viewport's bottom edge — long lists don't pay for offscreen
     /// items.
-    pub fn visible_items(
-        &self,
-        scroll: u16,
-        viewport_height: u16,
-    ) -> VisibleIter<'_, T> {
+    pub fn visible_items(&self, scroll: u16, viewport_height: u16) -> VisibleIter<'_, T> {
         VisibleIter {
             items_iter: self.items.iter(),
             layout_y: 0,
@@ -398,7 +394,7 @@ mod tests {
         list.push_header("h", 1);
         list.push_row("a", 3); // layout y=1..4
         list.push_row("b", 2); // layout y=4..6
-        // No scroll: viewport_y=1 → row 0 (top of "a").
+                               // No scroll: viewport_y=1 → row 0 (top of "a").
         assert_eq!(list.row_at_y(1, 0), Some(0));
         // Bottom of "a" still in row 0.
         assert_eq!(list.row_at_y(3, 0), Some(0));
@@ -422,8 +418,8 @@ mod tests {
         list.push_header("h", 1); // layout y=0
         list.push_row("a", 3); // layout y=1..4
         list.push_row("b", 2); // layout y=4..6
-        // Scroll offset 1: viewport top maps to layout y=1.
-        // viewport_y=0 → layout y=1 → row 0 ("a").
+                               // Scroll offset 1: viewport top maps to layout y=1.
+                               // viewport_y=0 → layout y=1 → row 0 ("a").
         assert_eq!(list.row_at_y(0, 1), Some(0));
         // viewport_y=3 → layout y=4 → row 1 ("b").
         assert_eq!(list.row_at_y(3, 1), Some(1));
@@ -452,15 +448,24 @@ mod tests {
         list.push_row("c", 1);
         assert_eq!(
             list.locate_row(0),
-            Some(RowLocation { section: Some(0), row_in_section: 0 })
+            Some(RowLocation {
+                section: Some(0),
+                row_in_section: 0
+            })
         );
         assert_eq!(
             list.locate_row(1),
-            Some(RowLocation { section: Some(0), row_in_section: 1 })
+            Some(RowLocation {
+                section: Some(0),
+                row_in_section: 1
+            })
         );
         assert_eq!(
             list.locate_row(2),
-            Some(RowLocation { section: Some(1), row_in_section: 0 })
+            Some(RowLocation {
+                section: Some(1),
+                row_in_section: 0
+            })
         );
     }
 
@@ -473,15 +478,24 @@ mod tests {
         list.push_row("c", 1);
         assert_eq!(
             list.locate_row(0),
-            Some(RowLocation { section: None, row_in_section: 0 })
+            Some(RowLocation {
+                section: None,
+                row_in_section: 0
+            })
         );
         assert_eq!(
             list.locate_row(1),
-            Some(RowLocation { section: None, row_in_section: 1 })
+            Some(RowLocation {
+                section: None,
+                row_in_section: 1
+            })
         );
         assert_eq!(
             list.locate_row(2),
-            Some(RowLocation { section: Some(0), row_in_section: 0 })
+            Some(RowLocation {
+                section: Some(0),
+                row_in_section: 0
+            })
         );
     }
 
@@ -494,7 +508,10 @@ mod tests {
         list.push_row("a", 1);
         assert_eq!(
             list.locate_row(0),
-            Some(RowLocation { section: Some(1), row_in_section: 0 })
+            Some(RowLocation {
+                section: Some(1),
+                row_in_section: 0
+            })
         );
     }
 
@@ -566,9 +583,18 @@ mod tests {
         list.push_row("b", 3);
         let v: Vec<_> = list.visible_items(0, 10).collect();
         assert_eq!(v.len(), 3);
-        assert_eq!((v[0].viewport_y, v[0].visible_height, v[0].row_idx), (0, 1, None));
-        assert_eq!((v[1].viewport_y, v[1].visible_height, v[1].row_idx), (1, 2, Some(0)));
-        assert_eq!((v[2].viewport_y, v[2].visible_height, v[2].row_idx), (3, 3, Some(1)));
+        assert_eq!(
+            (v[0].viewport_y, v[0].visible_height, v[0].row_idx),
+            (0, 1, None)
+        );
+        assert_eq!(
+            (v[1].viewport_y, v[1].visible_height, v[1].row_idx),
+            (1, 2, Some(0))
+        );
+        assert_eq!(
+            (v[2].viewport_y, v[2].visible_height, v[2].row_idx),
+            (3, 3, Some(1))
+        );
     }
 
     #[test]
@@ -576,7 +602,7 @@ mod tests {
         let mut list = SectionedList::new();
         list.push_row("a", 5); // layout 0..5
         list.push_row("b", 5); // layout 5..10
-        // Viewport 7 tall: "a" fully visible (0..5), "b" clipped (5..7 → vh=2).
+                               // Viewport 7 tall: "a" fully visible (0..5), "b" clipped (5..7 → vh=2).
         let v: Vec<_> = list.visible_items(0, 7).collect();
         assert_eq!(v.len(), 2);
         assert_eq!((v[0].viewport_y, v[0].visible_height), (0, 5));
@@ -588,11 +614,17 @@ mod tests {
         let mut list = SectionedList::new();
         list.push_row("a", 5); // 0..5
         list.push_row("b", 5); // 5..10
-        // scroll=2: viewport sees layout 2..12. "a" clipped from 2..5 (vh=3), "b" full (5..10 → viewport_y=3, vh=5).
+                               // scroll=2: viewport sees layout 2..12. "a" clipped from 2..5 (vh=3), "b" full (5..10 → viewport_y=3, vh=5).
         let v: Vec<_> = list.visible_items(2, 10).collect();
         assert_eq!(v.len(), 2);
-        assert_eq!((v[0].viewport_y, v[0].visible_height, v[0].row_idx), (0, 3, Some(0)));
-        assert_eq!((v[1].viewport_y, v[1].visible_height, v[1].row_idx), (3, 5, Some(1)));
+        assert_eq!(
+            (v[0].viewport_y, v[0].visible_height, v[0].row_idx),
+            (0, 3, Some(0))
+        );
+        assert_eq!(
+            (v[1].viewport_y, v[1].visible_height, v[1].row_idx),
+            (3, 5, Some(1))
+        );
     }
 
     #[test]
@@ -601,7 +633,7 @@ mod tests {
         list.push_row("a", 3); // 0..3
         list.push_row("b", 3); // 3..6
         list.push_row("c", 3); // 6..9
-        // scroll=4: "a" gone, "b" clipped 4..6, "c" full 6..9.
+                               // scroll=4: "a" gone, "b" clipped 4..6, "c" full 6..9.
         let v: Vec<_> = list.visible_items(4, 10).collect();
         assert_eq!(v.len(), 2);
         // Critical: "b" must still report row_idx=Some(1), not Some(0).
@@ -648,7 +680,7 @@ mod tests {
         let mut list = SectionedList::new();
         list.push_row("a", 5); // 0..5
         list.push_row("b", 5); // 5..10
-        // Viewport height 5 → covers 0..5. "b" starts exactly at the bottom edge — invisible.
+                               // Viewport height 5 → covers 0..5. "b" starts exactly at the bottom edge — invisible.
         let v: Vec<_> = list.visible_items(0, 5).collect();
         assert_eq!(v.len(), 1);
         assert_eq!(v[0].row_idx, Some(0));

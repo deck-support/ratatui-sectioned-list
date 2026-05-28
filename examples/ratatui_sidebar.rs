@@ -13,8 +13,7 @@ use std::io::{self, Stdout};
 
 use crossterm::{
     event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, MouseButton,
-        MouseEventKind,
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, MouseButton, MouseEventKind,
     },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -80,7 +79,10 @@ fn build_list() -> SectionedList<Row> {
         ),
         4,
     );
-    list.push_row(row("row h=2 — 2 content lines", "line 2: detail only", "", ""), 2);
+    list.push_row(
+        row("row h=2 — 2 content lines", "line 2: detail only", "", ""),
+        2,
+    );
     list.push_row(
         row(
             "row h=3 — 3 content lines",
@@ -93,7 +95,11 @@ fn build_list() -> SectionedList<Row> {
 
     // Section 2: yellow double-line separator, header h=3 → blank above + below.
     list.push_header(
-        header("section 2: yellow ══, h=3 → margin top + bottom", Color::Yellow, "══"),
+        header(
+            "section 2: yellow ══, h=3 → margin top + bottom",
+            Color::Yellow,
+            "══",
+        ),
         3,
     );
     list.push_row(
@@ -117,7 +123,10 @@ fn build_list() -> SectionedList<Row> {
     list.push_row(row("press j / k to move focus", "", "", ""), 2);
 
     // Section 3: green dotted separator, header h=1.
-    list.push_header(header("section 3: green · · · divider, h=1", Color::Green, "· · ·"), 1);
+    list.push_header(
+        header("section 3: green · · · divider, h=1", Color::Green, "· · ·"),
+        1,
+    );
     list.push_row(
         row(
             "click any row to focus it",
@@ -212,10 +221,7 @@ fn teardown() -> io::Result<()> {
     Ok(())
 }
 
-fn run(
-    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
-    app: &mut App,
-) -> io::Result<()> {
+fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut App) -> io::Result<()> {
     loop {
         terminal
             .draw(|frame| draw(frame, app))
@@ -372,7 +378,10 @@ fn build_details(app: &App, scroll: u16, viewport_h: u16) -> Vec<Line<'static>> 
         Line::from(Span::styled("keys", dim)),
         Line::from(Span::styled("  j / ↓     move focus down", dim)),
         Line::from(Span::styled("  k / ↑     move focus up", dim)),
-        Line::from(Span::styled("  + / -     grow / shrink focused row (1..10)", dim)),
+        Line::from(Span::styled(
+            "  + / -     grow / shrink focused row (1..10)",
+            dim,
+        )),
         Line::from(Span::styled("  click     focus row under cursor", dim)),
         Line::from(Span::styled("  q / Esc   quit", dim)),
     ]
