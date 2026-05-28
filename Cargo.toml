@@ -8,6 +8,11 @@ repository = "https://github.com/deck-support/ratatui-sectioned-list"
 keywords = ["ratatui", "tui", "widget", "list", "scroll"]
 categories = ["command-line-interface"]
 readme = "README.md"
+exclude = [
+    "/.github/",
+    "/SCR-*.png",
+    "/.gitignore",
+]
 
 [dependencies]
 
