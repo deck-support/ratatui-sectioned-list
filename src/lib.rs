@@ -11,6 +11,103 @@ pub enum ItemKind {
     Row,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DividerLayout {
+    /// Width available for the rendered label after reserving the leading
+    /// cells, chevron, rule spacer, optional badge, and right-side actions.
+    pub label_width: usize,
+    /// Width of the fill rule between the label and the optional badge/actions.
+    pub rule_width: usize,
+    /// Cell range of the optional badge text, excluding its leading gap.
+    pub badge: Option<std::ops::Range<usize>>,
+    /// Cell ranges of right-side actions in the same order they were requested.
+    pub actions: Vec<std::ops::Range<usize>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DividerLayoutSpec {
+    pub width: usize,
+    pub leading_width: usize,
+    /// Width of the collapse indicator plus its trailing space.
+    pub chevron_width: usize,
+    /// Width of the spacer between the label and rule.
+    pub spacer_width: usize,
+    /// Width of the gap before each optional badge/action.
+    pub gap_width: usize,
+    /// Display width of the untruncated label.
+    pub label_width: usize,
+    /// Display width of the optional badge text, excluding its leading gap.
+    pub badge_width: Option<usize>,
+    /// Widths of right-aligned action labels/buttons in display order.
+    pub action_widths: Vec<usize>,
+}
+
+/// Lay out a one-line section divider with a leading region, chevron, label,
+/// rule fill, optional badge, and right-aligned actions.
+///
+/// This is UI-framework agnostic: callers provide display widths in terminal
+/// cells and render text/styles themselves from the returned widths/ranges.
+pub fn layout_divider(spec: DividerLayoutSpec) -> DividerLayout {
+    let actions_width: usize = spec
+        .action_widths
+        .iter()
+        .map(|w| spec.gap_width.saturating_add(*w))
+        .sum();
+    let avail = spec
+        .width
+        .saturating_sub(spec.leading_width)
+        .saturating_sub(spec.chevron_width)
+        .saturating_sub(actions_width);
+
+    let badge_total = spec
+        .badge_width
+        .filter(|w| {
+            avail
+                > spec
+                    .gap_width
+                    .saturating_add(*w)
+                    .saturating_add(spec.spacer_width)
+        })
+        .map(|w| spec.gap_width.saturating_add(w))
+        .unwrap_or(0);
+    let label_width = spec.label_width.min(
+        avail
+            .saturating_sub(spec.spacer_width)
+            .saturating_sub(badge_total),
+    );
+    let rule_width = avail
+        .saturating_sub(label_width)
+        .saturating_sub(spec.spacer_width)
+        .saturating_sub(badge_total);
+
+    let mut cursor =
+        spec.leading_width + spec.chevron_width + label_width + spec.spacer_width + rule_width;
+    let badge = spec.badge_width.and_then(|w| {
+        if badge_total == 0 {
+            return None;
+        }
+        cursor += spec.gap_width;
+        let range = cursor..cursor.saturating_add(w);
+        cursor = range.end;
+        Some(range)
+    });
+
+    let mut actions = Vec::with_capacity(spec.action_widths.len());
+    for width in spec.action_widths {
+        cursor += spec.gap_width;
+        let range = cursor..cursor.saturating_add(width);
+        cursor = range.end;
+        actions.push(range);
+    }
+
+    DividerLayout {
+        label_width,
+        rule_width,
+        badge,
+        actions,
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Item<T> {
     pub kind: ItemKind,
@@ -35,11 +132,30 @@ pub struct Visible<'a, T> {
     pub item: &'a Item<T>,
     pub viewport_y: u16,
     pub visible_height: u16,
+    /// Offset inside the item's declared height where this visible slice
+    /// begins. `0` means the item is visible from its first line; a non-zero
+    /// value means the viewport clipped the item's top.
+    pub item_y_offset: u16,
     /// `Some(row_idx)` for focusable rows; `None` for headers. The row
     /// index is the global one — counted across the whole list, with
     /// headers skipped, preserved across rows that are above the
     /// viewport or have height 0.
     pub row_idx: Option<usize>,
+}
+
+impl<T> Visible<'_, T> {
+    /// Map a line inside this item to a viewport-relative y coordinate.
+    ///
+    /// Returns `None` when `item_line` is clipped above or below the viewport.
+    /// This lets renderers build per-item click regions without first
+    /// rendering a full offscreen list and translating global line indices.
+    pub fn viewport_y_for_item_line(&self, item_line: u16) -> Option<u16> {
+        let visible_end = self.item_y_offset.saturating_add(self.visible_height);
+        if item_line < self.item_y_offset || item_line >= visible_end {
+            return None;
+        }
+        Some(self.viewport_y + item_line - self.item_y_offset)
+    }
 }
 
 /// Iterator returned by [`SectionedList::visible_items`].
@@ -100,6 +216,7 @@ impl<'a, T> Iterator for VisibleIter<'a, T> {
                 item,
                 viewport_y,
                 visible_height,
+                item_y_offset: overlap_top - item_top,
                 row_idx,
             });
         }
@@ -437,6 +554,71 @@ mod tests {
     use super::*;
 
     #[test]
+    fn divider_layout_places_single_action_after_rule() {
+        let layout = layout_divider(DividerLayoutSpec {
+            width: 24,
+            leading_width: 1,
+            chevron_width: 2,
+            spacer_width: 1,
+            gap_width: 1,
+            label_width: 6,
+            badge_width: None,
+            action_widths: vec![3],
+        });
+        assert_eq!(layout.label_width, 6);
+        assert_eq!(layout.rule_width, 10);
+        assert_eq!(layout.badge, None);
+        assert_eq!(layout.actions, vec![21..24]);
+    }
+
+    #[test]
+    fn divider_layout_badge_eats_rule_not_action_positions() {
+        let without = layout_divider(DividerLayoutSpec {
+            width: 60,
+            leading_width: 1,
+            chevron_width: 2,
+            spacer_width: 1,
+            gap_width: 1,
+            label_width: 2,
+            badge_width: None,
+            action_widths: vec![3, 3],
+        });
+        let with = layout_divider(DividerLayoutSpec {
+            badge_width: Some(2),
+            ..DividerLayoutSpec {
+                width: 60,
+                leading_width: 1,
+                chevron_width: 2,
+                spacer_width: 1,
+                gap_width: 1,
+                label_width: 2,
+                badge_width: None,
+                action_widths: vec![3, 3],
+            }
+        });
+        assert_eq!(with.actions, without.actions);
+        assert_eq!(with.badge, Some(50..52));
+        assert_eq!(with.rule_width + 3, without.rule_width);
+    }
+
+    #[test]
+    fn divider_layout_suppresses_badge_when_it_would_crowd_label() {
+        let layout = layout_divider(DividerLayoutSpec {
+            width: 14,
+            leading_width: 1,
+            chevron_width: 2,
+            spacer_width: 1,
+            gap_width: 1,
+            label_width: 2,
+            badge_width: Some(3),
+            action_widths: vec![3, 3],
+        });
+        assert_eq!(layout.badge, None);
+        assert_eq!(layout.actions, vec![7..10, 11..14]);
+        assert_eq!(layout.label_width, 2);
+    }
+
+    #[test]
     fn empty_list_has_zero_total_height() {
         let list: SectionedList<&str> = SectionedList::new();
         assert_eq!(list.total_height(), 0);
@@ -744,6 +926,9 @@ mod tests {
             (v[2].viewport_y, v[2].visible_height, v[2].row_idx),
             (3, 3, Some(1))
         );
+        assert_eq!(v[0].item_y_offset, 0);
+        assert_eq!(v[1].item_y_offset, 0);
+        assert_eq!(v[2].item_y_offset, 0);
     }
 
     #[test]
@@ -756,6 +941,7 @@ mod tests {
         assert_eq!(v.len(), 2);
         assert_eq!((v[0].viewport_y, v[0].visible_height), (0, 5));
         assert_eq!((v[1].viewport_y, v[1].visible_height), (5, 2));
+        assert_eq!(v[1].item_y_offset, 0);
     }
 
     #[test]
@@ -770,10 +956,26 @@ mod tests {
             (v[0].viewport_y, v[0].visible_height, v[0].row_idx),
             (0, 3, Some(0))
         );
+        assert_eq!(v[0].item_y_offset, 2);
         assert_eq!(
             (v[1].viewport_y, v[1].visible_height, v[1].row_idx),
             (3, 5, Some(1))
         );
+        assert_eq!(v[1].item_y_offset, 0);
+    }
+
+    #[test]
+    fn visible_item_maps_item_lines_to_viewport_y() {
+        let mut list = SectionedList::new();
+        list.push_row("a", 5); // 0..5
+        let v: Vec<_> = list.visible_items(2, 2).collect();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].item_y_offset, 2);
+        assert_eq!(v[0].visible_height, 2);
+        assert_eq!(v[0].viewport_y_for_item_line(1), None);
+        assert_eq!(v[0].viewport_y_for_item_line(2), Some(0));
+        assert_eq!(v[0].viewport_y_for_item_line(3), Some(1));
+        assert_eq!(v[0].viewport_y_for_item_line(4), None);
     }
 
     #[test]

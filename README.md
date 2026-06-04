@@ -27,6 +27,8 @@ You're using [ratatui](https://github.com/ratatui/ratatui) (or any TUI lib) and 
 
 [`tui-widget-list`](https://crates.io/crates/tui-widget-list) is the closest existing crate, but it doesn't model the header-row distinction or expose viewport-relative hit-testing. This crate fills that gap with a tiny, dependency-free API.
 
+It also includes a small divider layout helper for section headers that need a truncated label, rule fill, optional badge, and right-aligned action hit ranges.
+
 ## Usage
 
 ```rust
@@ -48,6 +50,7 @@ let scroll = list.scroll_offset(Some(focused), viewport_height);
 for v in list.visible_items(scroll, viewport_height) {
     // v.viewport_y         — top of this item inside the viewport
     // v.visible_height     — height after top/bottom clipping
+    // v.item_y_offset      — first visible line inside this item
     // v.item.data          — your &T
     // v.row_idx            — Some(n) for rows, None for headers
     let is_focused_row = v.row_idx == Some(focused);
@@ -117,9 +120,10 @@ navigation step over them.
 | `set_collapsible(bool)` / `is_collapsible()` | Toggle/query the collapse feature. Default off. |
 | `toggle_section(section_idx)` / `set_collapsed(section_idx, bool)` / `is_collapsed(section_idx)` | Manage a section's collapsed state. `section_idx` is the 0-based header order. |
 | `is_row_hidden(row_idx)` | Whether a row is hidden by a collapsed section — use it to skip hidden rows when moving focus. |
-| **`visible_items(scroll, viewport_height)`** | **The high-level rendering iterator: yields viewport-clipped `Visible<T>` entries with `viewport_y`, `visible_height`, `row_idx`.** |
+| **`visible_items(scroll, viewport_height)`** | **The high-level rendering iterator: yields viewport-clipped `Visible<T>` entries with `viewport_y`, `visible_height`, `item_y_offset`, `row_idx`.** |
 | `iter_with_y()` | Low-level walk over all items with their top y offset. |
 | `items()` | Borrow the underlying item slice. |
+| `layout_divider(spec)` | Compute label width, rule width, badge range, and right-side action ranges for a one-line section divider. |
 
 The generic `T` is your row payload — a label, a struct, anything. The crate doesn't inspect it.
 
