@@ -43,15 +43,16 @@ pub struct Visible<'a, T> {
 }
 
 /// Iterator returned by [`SectionedList::visible_items`].
+///
+/// Built on top of [`SectionedList::walk`], so the effective-height /
+/// collapse arithmetic lives in exactly one place; this iterator adds only
+/// the viewport clipping, zero-height skipping, and row-index counting.
 pub struct VisibleIter<'a, T> {
-    items_iter: std::slice::Iter<'a, Item<T>>,
-    layout_y: u16,
+    walk: Box<dyn Iterator<Item = (u16, &'a Item<T>, u16)> + 'a>,
     scroll: u16,
     viewport_height: u16,
     row_idx_counter: usize,
     finished: bool,
-    collapsible: bool,
-    section_collapsed: bool,
 }
 
 impl<'a, T> Iterator for VisibleIter<'a, T> {
@@ -65,27 +66,8 @@ impl<'a, T> Iterator for VisibleIter<'a, T> {
         let view_bottom = self.scroll.saturating_add(self.viewport_height);
 
         loop {
-            let item = self.items_iter.next()?;
-
-            // A header opens a new section; rows belonging to a collapsed
-            // section lay out with an effective height of 0 (hidden).
-            let eff_height = match item.kind {
-                ItemKind::Header => {
-                    self.section_collapsed = self.collapsible && item.collapsed;
-                    item.height
-                }
-                ItemKind::Row => {
-                    if self.section_collapsed {
-                        0
-                    } else {
-                        item.height
-                    }
-                }
-            };
-
-            let item_top = self.layout_y;
-            let item_bottom = self.layout_y.saturating_add(eff_height);
-            self.layout_y = item_bottom;
+            let (item_top, item, eff_height) = self.walk.next()?;
+            let item_bottom = item_top.saturating_add(eff_height);
 
             let row_idx = match item.kind {
                 ItemKind::Row => {
@@ -431,14 +413,11 @@ impl<T> SectionedList<T> {
     /// items.
     pub fn visible_items(&self, scroll: u16, viewport_height: u16) -> VisibleIter<'_, T> {
         VisibleIter {
-            items_iter: self.items.iter(),
-            layout_y: 0,
+            walk: Box::new(self.walk()),
             scroll,
             viewport_height,
             row_idx_counter: 0,
             finished: false,
-            collapsible: self.collapsible,
-            section_collapsed: false,
         }
     }
 
