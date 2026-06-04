@@ -1,6 +1,7 @@
 # ratatui-sectioned-list
 
 [![crates.io](https://img.shields.io/crates/v/ratatui-sectioned-list.svg)](https://crates.io/crates/ratatui-sectioned-list)
+[![downloads](https://img.shields.io/crates/d/ratatui-sectioned-list.svg)](https://crates.io/crates/ratatui-sectioned-list)
 [![docs.rs](https://img.shields.io/docsrs/ratatui-sectioned-list)](https://docs.rs/ratatui-sectioned-list)
 [![CI](https://github.com/deck-support/ratatui-sectioned-list/actions/workflows/ci.yml/badge.svg)](https://github.com/deck-support/ratatui-sectioned-list/actions/workflows/ci.yml)
 [![license](https://img.shields.io/crates/l/ratatui-sectioned-list.svg)](https://github.com/deck-support/ratatui-sectioned-list/blob/main/LICENSE)
