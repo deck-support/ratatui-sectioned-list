@@ -147,6 +147,10 @@ fn build_list() -> SectionedList<Row> {
     );
     list.push_row(row("press q or Esc to quit", "", "", ""), 2);
 
+    // Allow clicking a divider to collapse/expand its section. The renderer
+    // reads `is_collapsible()` + `item.collapsed` to draw the ▾/▸ indicator.
+    list.set_collapsible(true);
+
     list
 }
 
@@ -170,8 +174,37 @@ impl App {
         if n == 0 {
             return;
         }
-        let new = (self.focused as i32 + delta).rem_euclid(n);
-        self.focused = new as usize;
+        // Step in the requested direction, skipping rows hidden inside a
+        // collapsed section so j/k and the wheel never land on a hidden item.
+        let mut candidate = self.focused as i32;
+        for _ in 0..n {
+            candidate = (candidate + delta).rem_euclid(n);
+            if !self.list.is_row_hidden(candidate as usize) {
+                self.focused = candidate as usize;
+                return;
+            }
+        }
+        // Every row is hidden — leave focus where it is.
+    }
+
+    /// Toggle the section containing the focused row (keyboard companion to
+    /// clicking a divider). Re-homes focus if the focused row gets hidden.
+    fn toggle_focused_section(&mut self) {
+        if let Some(RowLocation {
+            section: Some(s), ..
+        }) = self.list.locate_row(self.focused)
+        {
+            self.list.toggle_section(s);
+            self.ensure_focus_visible();
+        }
+    }
+
+    /// If the focused row is now hidden by a collapse, move focus to the
+    /// nearest following visible row.
+    fn ensure_focus_visible(&mut self) {
+        if self.list.is_row_hidden(self.focused) {
+            self.move_focus(1);
+        }
     }
 
     fn resize_focused(&mut self, delta: i32) {
@@ -194,6 +227,14 @@ impl App {
         }
         let viewport_y = row - r.y;
         let scroll = self.list.scroll_offset(Some(self.focused), r.height);
+        // A click on a divider toggles its section; otherwise it focuses a row.
+        if self.list.is_collapsible() {
+            if let Some(section) = self.list.header_at_y(viewport_y, scroll) {
+                self.list.toggle_section(section);
+                self.ensure_focus_visible();
+                return;
+            }
+        }
         if let Some(idx) = self.list.row_at_y(viewport_y, scroll) {
             self.focused = idx;
         }
@@ -233,11 +274,16 @@ fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut App) -> io::
                 KeyCode::Char('k') | KeyCode::Up => app.move_focus(-1),
                 KeyCode::Char('+') | KeyCode::Char('=') => app.resize_focused(1),
                 KeyCode::Char('-') | KeyCode::Char('_') => app.resize_focused(-1),
+                KeyCode::Enter | KeyCode::Char(' ') => app.toggle_focused_section(),
                 _ => {}
             },
-            Event::Mouse(m) if matches!(m.kind, MouseEventKind::Down(MouseButton::Left)) => {
-                app.handle_click(m.column, m.row);
-            }
+            Event::Mouse(m) => match m.kind {
+                MouseEventKind::Down(MouseButton::Left) => app.handle_click(m.column, m.row),
+                // Wheel moves focus and likewise skips hidden rows.
+                MouseEventKind::ScrollDown => app.move_focus(1),
+                MouseEventKind::ScrollUp => app.move_focus(-1),
+                _ => {}
+            },
             _ => {}
         }
     }
@@ -275,16 +321,29 @@ fn draw_sidebar(frame: &mut Frame, app: &App, inner: Rect, scroll: u16) {
             height: v.visible_height,
         };
         let text = match v.item.kind {
-            ItemKind::Header => header_lines(&v.item.data, v.item.height),
+            ItemKind::Header => header_lines(
+                &v.item.data,
+                v.item.height,
+                app.list.is_collapsible(),
+                v.item.collapsed,
+            ),
             ItemKind::Row => row_lines(&v.item.data, v.row_idx == Some(app.focused)),
         };
         frame.render_widget(Paragraph::new(text), cell);
     }
 }
 
-fn header_lines(h: &Row, height: u16) -> Vec<Line<'static>> {
+fn header_lines(h: &Row, height: u16, collapsible: bool, collapsed: bool) -> Vec<Line<'static>> {
+    // When collapsing is on, prefix the divider with a state indicator:
+    // ▾ expanded, ▸ collapsed.
+    let label = if collapsible {
+        let indicator = if collapsed { "▸" } else { "▾" };
+        format!("{indicator} {0} {1} {0}", h.header_sep, h.label)
+    } else {
+        format!("{0} {1} {0}", h.header_sep, h.label)
+    };
     let bar = Line::from(Span::styled(
-        format!("{0} {1} {0}", h.header_sep, h.label),
+        label,
         Style::default()
             .fg(h.header_color)
             .add_modifier(Modifier::BOLD),
@@ -376,13 +435,30 @@ fn build_details(app: &App, scroll: u16, viewport_h: u16) -> Vec<Line<'static>> 
         Line::from(format!("total_height       : {}", app.list.total_height())),
         Line::from(""),
         Line::from(Span::styled("keys", dim)),
-        Line::from(Span::styled("  j / ↓     move focus down", dim)),
-        Line::from(Span::styled("  k / ↑     move focus up", dim)),
+        Line::from(Span::styled(
+            "  j / ↓     move focus down (skips collapsed)",
+            dim,
+        )),
+        Line::from(Span::styled(
+            "  k / ↑     move focus up (skips collapsed)",
+            dim,
+        )),
+        Line::from(Span::styled(
+            "  wheel     move focus (skips collapsed)",
+            dim,
+        )),
         Line::from(Span::styled(
             "  + / -     grow / shrink focused row (1..10)",
             dim,
         )),
-        Line::from(Span::styled("  click     focus row under cursor", dim)),
+        Line::from(Span::styled(
+            "  click     focus row, or toggle a divider",
+            dim,
+        )),
+        Line::from(Span::styled(
+            "  enter/spc collapse / expand focused section",
+            dim,
+        )),
         Line::from(Span::styled("  q / Esc   quit", dim)),
     ]
 }

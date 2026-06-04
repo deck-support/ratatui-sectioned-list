@@ -66,4 +66,29 @@ fn main() {
         };
         println!("  viewport_y={vy} → {label}");
     }
+
+    // ----- collapsible sections -----
+    // Off by default; turn it on, then collapse section 0 ("local").
+    list.set_collapsible(true);
+    list.toggle_section(0);
+    println!(
+        "\nAfter collapsing section 0 (total height = {}):",
+        list.total_height()
+    );
+    for v in list.visible_items(0, list.total_height()) {
+        let tag = match v.item.kind {
+            ItemKind::Header => {
+                let indicator = if v.item.collapsed { "▸" } else { "▾" };
+                format!("HEADER {indicator}")
+            }
+            ItemKind::Row => "  row   ".to_string(),
+        };
+        println!("  y={:>2}  {}  {}", v.viewport_y, tag, v.item.data);
+    }
+    println!(
+        "  rows under 'local' are hidden but keep their indices: \
+         row 0 hidden = {}, row 2 hidden = {}",
+        list.is_row_hidden(0),
+        list.is_row_hidden(2),
+    );
 }

@@ -59,6 +59,41 @@ if let Some(row_idx) = list.row_at_y(4, scroll) {
 
 See `examples/ratatui_sidebar.rs` for a complete interactive demo (keyboard nav, mouse click, dynamic resize).
 
+## Collapsible sections
+
+Opt in with `set_collapsible(true)` (off by default — when off, the layout is
+exactly as before). A divider (header) can then be collapsed, hiding its rows.
+The crate stays renderer-agnostic: it exposes the state and you draw the
+indicator.
+
+```rust
+list.set_collapsible(true);
+
+// Click handler: a divider toggles its section, anything else focuses a row.
+if let Some(section) = list.header_at_y(viewport_y, scroll) {
+    list.toggle_section(section);
+} else if let Some(row_idx) = list.row_at_y(viewport_y, scroll) {
+    focused = row_idx;
+}
+
+// Render: read `is_collapsible()` + the header's `collapsed` flag for the indicator.
+for v in list.visible_items(scroll, viewport_height) {
+    if v.item.kind == ItemKind::Header && list.is_collapsible() {
+        let indicator = if v.item.collapsed { "▸" } else { "▾" }; // collapsed / expanded
+        // draw `indicator` on the divider …
+    }
+    // collapsed sections' rows are simply absent from this iterator.
+}
+
+// Moving focus: skip rows hidden inside a collapsed section.
+fn next_visible(list: &SectionedList<T>, from: usize) -> usize { /* loop, skipping is_row_hidden */ }
+```
+
+Collapsing a section sets its rows to an effective height of 0 — they vanish
+from `visible_items`, `row_at_y`, `total_height`, and scrolling, while keeping
+their **stable global indices**. `is_row_hidden(row_idx)` lets keyboard / wheel
+navigation step over them.
+
 ## API
 
 | Method | Purpose |
@@ -72,6 +107,10 @@ See `examples/ratatui_sidebar.rs` for a complete interactive demo (keyboard nav,
 | `locate_row(global_idx)` | `RowLocation { section, row_in_section }` — section-scoped lookup. |
 | `scroll_offset(focused, viewport_height)` | Minimum offset to keep focus visible. |
 | `row_at_y(viewport_y, scroll_offset)` | Hit-test → global row index, or `None`. |
+| `header_at_y(viewport_y, scroll_offset)` | Hit-test → section index of the divider at `y`, or `None`. Mirror of `row_at_y` for click-to-collapse. |
+| `set_collapsible(bool)` / `is_collapsible()` | Toggle/query the collapse feature. Default off. |
+| `toggle_section(section_idx)` / `set_collapsed(section_idx, bool)` / `is_collapsed(section_idx)` | Manage a section's collapsed state. `section_idx` is the 0-based header order. |
+| `is_row_hidden(row_idx)` | Whether a row is hidden by a collapsed section — use it to skip hidden rows when moving focus. |
 | **`visible_items(scroll, viewport_height)`** | **The high-level rendering iterator: yields viewport-clipped `Visible<T>` entries with `viewport_y`, `visible_height`, `row_idx`.** |
 | `iter_with_y()` | Low-level walk over all items with their top y offset. |
 | `items()` | Borrow the underlying item slice. |
@@ -81,7 +120,7 @@ The generic `T` is your row payload — a label, a struct, anything. The crate d
 ## Design choices
 
 - **No dependencies.** Not even `ratatui`. Heights are `u16`, offsets are `u16`. You bring your own renderer.
-- **Stateless.** `SectionedList` doesn't hold focus or scroll state — pass them as parameters. Compose freely with whatever state-management style you already use.
+- **Stateless view state.** `SectionedList` doesn't hold focus or scroll state — pass them as parameters. Compose freely with whatever state-management style you already use. Collapse is the exception: it changes layout heights (like row heights), so the list owns it.
 - **Focus indexes count rows only.** Headers are invisible to focus. Row indexes are stable as long as you don't reorder.
 - **Anchor-bottom scrolling.** When focus doesn't fit from the top, the focused row's bottom edge aligns to the viewport's bottom edge. This is the smallest scroll that contains the focused row.
 
