@@ -44,7 +44,7 @@ pub struct Visible<'a, T> {
 
 /// Iterator returned by [`SectionedList::visible_items`].
 ///
-/// Built on top of [`SectionedList::walk`], so the effective-height /
+/// Built on top of the internal `walk` traversal, so the effective-height /
 /// collapse arithmetic lives in exactly one place; this iterator adds only
 /// the viewport clipping, zero-height skipping, and row-index counting.
 pub struct VisibleIter<'a, T> {

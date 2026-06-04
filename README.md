@@ -1,5 +1,10 @@
 # ratatui-sectioned-list
 
+[![crates.io](https://img.shields.io/crates/v/ratatui-sectioned-list.svg)](https://crates.io/crates/ratatui-sectioned-list)
+[![docs.rs](https://img.shields.io/docsrs/ratatui-sectioned-list)](https://docs.rs/ratatui-sectioned-list)
+[![CI](https://github.com/deck-support/ratatui-sectioned-list/actions/workflows/ci.yml/badge.svg)](https://github.com/deck-support/ratatui-sectioned-list/actions/workflows/ci.yml)
+[![license](https://img.shields.io/crates/l/ratatui-sectioned-list.svg)](https://github.com/deck-support/ratatui-sectioned-list/blob/main/LICENSE)
+
 Layout, focus, scroll, and hit-test primitives for a **sectioned list** — non-focusable headers interleaved with focusable, variable-height rows.
 
 UI-framework agnostic: heights and offsets are plain `u16` values measured in terminal rows. You render. This crate just answers:
