@@ -1,287 +1,135 @@
-//! Interactive ratatui demo. Run with:
+//! Interactive demo built on the **`BasicItem` preset** — the same default
+//! styling and focus highlight as `preset`, plus two things `preset` doesn't
+//! show: `+`/`-` to resize the focused row, and a right pane that reads
+//! `scroll_offset`, `row_y`, and `locate_row` live.
 //!
 //! ```sh
 //! cargo run --example ratatui_sidebar
 //! ```
-//!
-//! Sidebar of sessions grouped by host. Variable row heights. Keyboard
-//! navigation (j/k or arrow keys) and mouse click to focus a row. The
-//! right pane displays the current focus + scroll state so you can see
-//! `scroll_offset` and `row_at_y` in action.
 
-use std::io::{self, Stdout};
+use std::io;
 
-use crossterm::{
-    event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, MouseButton, MouseEventKind,
-    },
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
 use ratatui::{
-    backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
+    crossterm::{
+        event::{
+            self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, MouseButton,
+            MouseEventKind,
+        },
+        execute,
+    },
+    layout::{Alignment, Constraint, Direction, Layout},
+    style::{Color, Style},
+    text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph},
-    Frame, Terminal,
+    DefaultTerminal, Frame,
 };
-use ratatui_sectioned_list::{ItemKind, RowLocation, SectionedList};
+use ratatui_sectioned_list::widget::{BasicItem, SectionedListState, SectionedListWidget};
+use ratatui_sectioned_list::{RowLocation, SectionedList};
 
-struct Row {
-    label: &'static str,
-    detail: &'static str,
-    status: &'static str,
-    tags: &'static str,
-    // Header-only styling. Rows ignore these fields.
-    header_color: Color,
-    header_sep: &'static str,
-}
-
-const fn header(label: &'static str, color: Color, sep: &'static str) -> Row {
-    Row {
-        label,
-        detail: "",
-        status: "",
-        tags: "",
-        header_color: color,
-        header_sep: sep,
-    }
-}
-
-const fn row(
-    label: &'static str,
-    detail: &'static str,
-    status: &'static str,
-    tags: &'static str,
-) -> Row {
-    Row {
-        label,
-        detail,
-        status,
-        tags,
-        header_color: Color::Reset,
-        header_sep: "",
-    }
-}
-
-fn build_list() -> SectionedList<Row> {
+fn build_list() -> SectionedList<BasicItem> {
     let mut list = SectionedList::new();
 
-    // Section 1: cyan single-line separator, header h=1 (no margin).
-    list.push_header(header("section 1: cyan divider, h=1", Color::Cyan, "─"), 1);
-    list.push_row(
-        row(
-            "row h=4 — 4 content lines",
-            "line 2: detail field",
-            "line 3: status field",
-            "line 4: tags field",
-        ),
-        4,
+    // Left-aligned label, full-width `─` divider, two right-side buttons.
+    list.push_header_auto(
+        BasicItem::new("local")
+            .separator("─")
+            .color(Color::Cyan)
+            .button("⟳") // refresh → [⟳]
+            .button("⋯"), // more    → [⋯]
     );
-    list.push_row(
-        row("row h=2 — 2 content lines", "line 2: detail only", "", ""),
+    list.push_row_auto(
+        BasicItem::new("session-a")
+            .line("idle 3m")
+            .line("2 windows"),
+    );
+    list.push_row_auto(BasicItem::new("session-b").line("running build"));
+    list.push_row_auto(BasicItem::new("press + / - to resize me"));
+
+    // `push_header_margin` adds blank rows above the bar to separate sections —
+    // here 2 rows of top margin. Centered label, plus the same two buttons.
+    list.push_header_margin(
+        BasicItem::new("remote: alice@host")
+            .separator("══")
+            .color(Color::Yellow)
+            .align(Alignment::Center)
+            .button("⟳")
+            .button("⋯"),
         2,
     );
-    list.push_row(
-        row(
-            "row h=3 — 3 content lines",
-            "line 2: detail",
-            "line 3: status",
-            "",
-        ),
-        3,
-    );
+    list.push_row_auto(BasicItem::new("session-c").line("connected"));
+    list.push_row_auto(BasicItem::new("session-d"));
 
-    // Section 2: yellow double-line separator, header h=3 → blank above + below.
-    list.push_header(
-        header(
-            "section 2: yellow ══, h=3 → margin top + bottom",
-            Color::Yellow,
-            "══",
-        ),
-        3,
-    );
-    list.push_row(
-        row(
-            "the blank rows above/below the header",
-            "come from header height = 3",
-            "renderer puts (h-1)/2 blanks above the bar",
-            "",
-        ),
-        4,
-    );
-    list.push_row(
-        row(
-            "press + / - to resize this row",
-            "wired via set_row_height(global_idx, h)",
-            "",
-            "",
-        ),
-        3,
-    );
-    list.push_row(row("press j / k to move focus", "", "", ""), 2);
-
-    // Section 3: green dotted separator, header h=1.
-    list.push_header(
-        header("section 3: green · · · divider, h=1", Color::Green, "· · ·"),
-        1,
-    );
-    list.push_row(
-        row(
-            "click any row to focus it",
-            "row_at_y(viewport_y, scroll)",
-            "returns global row index",
-            "",
-        ),
-        4,
-    );
-    list.push_row(
-        row(
-            "scroll follows focus automatically",
-            "scroll_offset(focused, viewport_h)",
-            "anchors focused row's bottom to viewport bottom",
-            "",
-        ),
-        4,
-    );
-    list.push_row(row("press q or Esc to quit", "", "", ""), 2);
-
-    // Allow clicking a divider to collapse/expand its section. The renderer
-    // reads `is_collapsible()` + `item.collapsed` to draw the ▾/▸ indicator.
     list.set_collapsible(true);
-
     list
 }
 
 struct App {
-    list: SectionedList<Row>,
-    focused: usize,
-    sidebar_inner: Rect,
+    list: SectionedList<BasicItem>,
+    state: SectionedListState,
+    last_action: String,
 }
 
 impl App {
     fn new() -> Self {
         Self {
             list: build_list(),
-            focused: 0,
-            sidebar_inner: Rect::default(),
+            state: SectionedListState::new(),
+            last_action: "—".to_string(),
         }
     }
 
-    fn move_focus(&mut self, delta: i32) {
-        let n = self.list.row_count() as i32;
-        if n == 0 {
-            return;
-        }
-        // Step in the requested direction, skipping rows hidden inside a
-        // collapsed section so j/k and the wheel never land on a hidden item.
-        let mut candidate = self.focused as i32;
-        for _ in 0..n {
-            candidate = (candidate + delta).rem_euclid(n);
-            if !self.list.is_row_hidden(candidate as usize) {
-                self.focused = candidate as usize;
-                return;
-            }
-        }
-        // Every row is hidden — leave focus where it is.
-    }
-
-    /// Toggle the section containing the focused row (keyboard companion to
-    /// clicking a divider). Re-homes focus if the focused row gets hidden.
-    fn toggle_focused_section(&mut self) {
-        if let Some(RowLocation {
-            section: Some(s), ..
-        }) = self.list.locate_row(self.focused)
-        {
-            self.list.toggle_section(s);
-            self.ensure_focus_visible();
-        }
-    }
-
-    /// If the focused row is now hidden by a collapse, move focus to the
-    /// nearest following visible row.
-    fn ensure_focus_visible(&mut self) {
-        if self.list.is_row_hidden(self.focused) {
-            self.move_focus(1);
-        }
-    }
-
+    /// Grow/shrink the focused row, clamped to 1..=10. Row-height editing is app
+    /// data, not list geometry, so it lives here rather than in the widget.
     fn resize_focused(&mut self, delta: i32) {
-        let Some((_, bottom)) = self.list.row_y(self.focused) else {
+        let focused = self.state.focused();
+        let Some((top, bottom)) = self.list.row_y(focused) else {
             return;
         };
-        let (top, _) = self.list.row_y(self.focused).unwrap();
-        let current = bottom - top;
-        let next = (current as i32 + delta).clamp(1, 10) as u16;
-        self.list.set_row_height(self.focused, next);
-    }
-
-    fn handle_click(&mut self, col: u16, row: u16) {
-        let r = self.sidebar_inner;
-        if col < r.x || col >= r.x + r.width {
-            return;
-        }
-        if row < r.y || row >= r.y + r.height {
-            return;
-        }
-        let viewport_y = row - r.y;
-        let scroll = self.list.scroll_offset(Some(self.focused), r.height);
-        // A click on a divider toggles its section; otherwise it focuses a row.
-        if self.list.is_collapsible() {
-            if let Some(section) = self.list.header_at_y(viewport_y, scroll) {
-                self.list.toggle_section(section);
-                self.ensure_focus_visible();
-                return;
-            }
-        }
-        if let Some(idx) = self.list.row_at_y(viewport_y, scroll) {
-            self.focused = idx;
-        }
+        let next = ((bottom - top) as i32 + delta).clamp(1, 10) as u16;
+        self.list.set_row_height(focused, next);
     }
 }
 
 fn main() -> io::Result<()> {
-    let mut terminal = setup()?;
     let mut app = App::new();
-    let result = run(&mut terminal, &mut app);
-    teardown()?;
-    result
+    // `ratatui::run` handles raw mode, the alternate screen, and a panic hook.
+    // Mouse capture isn't in those defaults, so we toggle it around the loop.
+    ratatui::run(|terminal| {
+        execute!(terminal.backend_mut(), EnableMouseCapture)?;
+        let result = run(terminal, &mut app);
+        execute!(terminal.backend_mut(), DisableMouseCapture)?;
+        result
+    })
 }
 
-fn setup() -> io::Result<Terminal<CrosstermBackend<Stdout>>> {
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    Terminal::new(CrosstermBackend::new(stdout))
-}
-
-fn teardown() -> io::Result<()> {
-    disable_raw_mode()?;
-    execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
-    Ok(())
-}
-
-fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut App) -> io::Result<()> {
+fn run(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
     loop {
-        terminal
-            .draw(|frame| draw(frame, app))
-            .map_err(io::Error::other)?;
+        terminal.draw(|frame| draw(frame, app))?;
         match event::read()? {
             Event::Key(k) => match k.code {
                 KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
-                KeyCode::Char('j') | KeyCode::Down => app.move_focus(1),
-                KeyCode::Char('k') | KeyCode::Up => app.move_focus(-1),
+                KeyCode::Char('j') | KeyCode::Down => app.state.move_focus(&app.list, 1),
+                KeyCode::Char('k') | KeyCode::Up => app.state.move_focus(&app.list, -1),
                 KeyCode::Char('+') | KeyCode::Char('=') => app.resize_focused(1),
                 KeyCode::Char('-') | KeyCode::Char('_') => app.resize_focused(-1),
-                KeyCode::Enter | KeyCode::Char(' ') => app.toggle_focused_section(),
+                KeyCode::Enter | KeyCode::Char(' ') => {
+                    app.state.toggle_focused_section(&mut app.list);
+                }
                 _ => {}
             },
             Event::Mouse(m) => match m.kind {
-                MouseEventKind::Down(MouseButton::Left) => app.handle_click(m.column, m.row),
-                // Wheel moves focus and likewise skips hidden rows.
-                MouseEventKind::ScrollDown => app.move_focus(1),
-                MouseEventKind::ScrollUp => app.move_focus(-1),
+                MouseEventKind::Down(MouseButton::Left) => {
+                    // `handle_click_basic` toggles/focuses as usual, but returns
+                    // the button when a header button is clicked (no toggle then).
+                    if let Some((section, button)) =
+                        app.state.handle_click_basic(&mut app.list, m.column, m.row)
+                    {
+                        let name = if button == 0 { "refresh" } else { "more" };
+                        app.last_action = format!("{name} on section {section}");
+                    }
+                }
+                MouseEventKind::ScrollDown => app.state.move_focus(&app.list, 1),
+                MouseEventKind::ScrollUp => app.state.move_focus(&app.list, -1),
                 _ => {}
             },
             _ => {}
@@ -295,170 +143,59 @@ fn draw(frame: &mut Frame, app: &mut App) {
         .constraints([Constraint::Length(60), Constraint::Min(30)])
         .split(frame.area());
 
-    let sidebar_block = Block::default()
+    let sidebar = Block::default()
         .borders(Borders::ALL)
         .title(" sectioned list ");
-    let inner = sidebar_block.inner(chunks[0]);
-    app.sidebar_inner = inner;
-    frame.render_widget(sidebar_block, chunks[0]);
+    let inner = sidebar.inner(chunks[0]);
+    frame.render_widget(sidebar, chunks[0]);
 
-    let scroll = app.list.scroll_offset(Some(app.focused), inner.height);
-    draw_sidebar(frame, app, inner, scroll);
+    // The preset: built-in `BasicItem` styling plus the default focus highlight.
+    frame.render_stateful_widget(SectionedListWidget::basic(&app.list), inner, &mut app.state);
 
-    let details = build_details(app, scroll, inner.height);
     let right = Block::default().borders(Borders::ALL).title(" details ");
     let right_inner = right.inner(chunks[1]);
     frame.render_widget(right, chunks[1]);
-    frame.render_widget(Paragraph::new(details), right_inner);
+    frame.render_widget(
+        Paragraph::new(details(app, app.state.scroll_offset(), inner.height)),
+        right_inner,
+    );
 }
 
-fn draw_sidebar(frame: &mut Frame, app: &App, inner: Rect, scroll: u16) {
-    for v in app.list.visible_items(scroll, inner.height) {
-        let cell = Rect {
-            x: inner.x,
-            y: inner.y + v.viewport_y,
-            width: inner.width,
-            height: v.visible_height,
-        };
-        let text = match v.item.kind {
-            ItemKind::Header => header_lines(
-                &v.item.data,
-                v.item.height,
-                app.list.is_collapsible(),
-                v.item.collapsed,
-            ),
-            ItemKind::Row => row_lines(&v.item.data, v.row_idx == Some(app.focused)),
-        };
-        frame.render_widget(Paragraph::new(text), cell);
-    }
-}
-
-fn header_lines(h: &Row, height: u16, collapsible: bool, collapsed: bool) -> Vec<Line<'static>> {
-    // When collapsing is on, prefix the divider with a state indicator:
-    // ▾ expanded, ▸ collapsed.
-    let label = if collapsible {
-        let indicator = if collapsed { "▸" } else { "▾" };
-        format!("{indicator} {0} {1} {0}", h.header_sep, h.label)
-    } else {
-        format!("{0} {1} {0}", h.header_sep, h.label)
-    };
-    let bar = Line::from(Span::styled(
-        label,
-        Style::default()
-            .fg(h.header_color)
-            .add_modifier(Modifier::BOLD),
-    ));
-    if height <= 1 {
-        return vec![bar];
-    }
-    // Center the bar vertically; blank cells above + below act as margin.
-    let top = (height - 1) / 2;
-    let mut lines: Vec<Line<'static>> = Vec::with_capacity(height as usize);
-    for _ in 0..top {
-        lines.push(Line::from(""));
-    }
-    lines.push(bar);
-    while (lines.len() as u16) < height {
-        lines.push(Line::from(""));
-    }
-    lines
-}
-
-fn row_lines(row: &Row, focused: bool) -> Vec<Line<'static>> {
-    let title_style = if focused {
-        Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default()
-    };
-    let bullet = if focused { "▌ " } else { "  " };
-    let dim = Style::default().fg(Color::DarkGray);
-    let mut lines = vec![Line::from(vec![
-        Span::styled(bullet.to_string(), title_style),
-        Span::styled(row.label.to_string(), title_style),
-    ])];
-    if !row.detail.is_empty() {
-        lines.push(Line::from(vec![
-            Span::raw("    "),
-            Span::styled(row.detail.to_string(), dim),
-        ]));
-    }
-    if !row.status.is_empty() {
-        lines.push(Line::from(vec![
-            Span::raw("    "),
-            Span::styled(row.status.to_string(), dim),
-        ]));
-    }
-    if !row.tags.is_empty() {
-        lines.push(Line::from(vec![
-            Span::raw("    "),
-            Span::styled(row.tags.to_string(), dim),
-        ]));
-    }
-    lines
-}
-
-fn build_details(app: &App, scroll: u16, viewport_h: u16) -> Vec<Line<'static>> {
-    let focused_y = app.list.row_y(app.focused);
-    let location = app.list.locate_row(app.focused);
-    let dim = Style::default().fg(Color::DarkGray);
-
-    let (section_label, row_in_section_label) = match location {
+fn details(app: &App, scroll: u16, viewport_h: u16) -> Text<'static> {
+    let focused = app.state.focused();
+    let section = match app.list.locate_row(focused) {
         Some(RowLocation {
-            section,
+            section: Some(s),
             row_in_section,
-        }) => {
-            let section = section
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "(none)".to_string());
-            (section, row_in_section.to_string())
-        }
-        None => ("-".to_string(), "-".to_string()),
+        }) => format!("{s} (row {row_in_section})"),
+        Some(RowLocation {
+            section: None,
+            row_in_section,
+        }) => format!("(none) (row {row_in_section})"),
+        None => "-".to_string(),
     };
-
-    vec![
-        Line::from(format!("global index       : {}", app.focused)),
-        Line::from(format!("section index      : {section_label}")),
-        Line::from(format!("row-in-section idx : {row_in_section_label}")),
-        Line::from(""),
+    let row_y = match app.list.row_y(focused) {
+        Some((t, b)) => format!("({t}, {b})"),
+        None => "None".to_string(),
+    };
+    let dim = Style::default().fg(Color::DarkGray);
+    Text::from(vec![
+        Line::from(format!("focused row  : {focused}")),
+        Line::from(format!("section      : {section}")),
+        Line::from(format!("row_y        : {row_y}")),
+        Line::from(format!("scroll_offset: {scroll}")),
+        Line::from(format!("viewport h   : {viewport_h}")),
         Line::from(format!(
-            "row_y(global)      : {}",
-            match focused_y {
-                Some((t, b)) => format!("({t}, {b})"),
-                None => "None".to_string(),
-            }
+            "rows / height: {} / {}",
+            app.list.row_count(),
+            app.list.total_height()
         )),
-        Line::from(format!("scroll_offset      : {scroll}")),
-        Line::from(format!("viewport height    : {viewport_h}")),
-        Line::from(format!("row_count          : {}", app.list.row_count())),
-        Line::from(format!("total_height       : {}", app.list.total_height())),
+        Line::from(format!("last button  : {}", app.last_action)),
         Line::from(""),
-        Line::from(Span::styled("keys", dim)),
+        Line::from(Span::styled("j/k move · enter collapse · +/- resize", dim)),
         Line::from(Span::styled(
-            "  j / ↓     move focus down (skips collapsed)",
+            "click row/divider/[⟳][⋯] · wheel · q quit",
             dim,
         )),
-        Line::from(Span::styled(
-            "  k / ↑     move focus up (skips collapsed)",
-            dim,
-        )),
-        Line::from(Span::styled(
-            "  wheel     move focus (skips collapsed)",
-            dim,
-        )),
-        Line::from(Span::styled(
-            "  + / -     grow / shrink focused row (1..10)",
-            dim,
-        )),
-        Line::from(Span::styled(
-            "  click     focus row, or toggle a divider",
-            dim,
-        )),
-        Line::from(Span::styled(
-            "  enter/spc collapse / expand focused section",
-            dim,
-        )),
-        Line::from(Span::styled("  q / Esc   quit", dim)),
-    ]
+    ])
 }

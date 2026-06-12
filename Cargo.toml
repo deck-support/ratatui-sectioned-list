@@ -1,6 +1,6 @@
 [package]
 name = "ratatui-sectioned-list"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 description = "Layout, focus, scroll, and hit-test primitives for a sectioned (header + variable-height row) list — UI-framework agnostic, pure u16 geometry."
 license = "Apache-2.0"
@@ -14,8 +14,25 @@ exclude = [
     "/.gitignore",
 ]
 
+[features]
+# On by default: this crate is built for ratatui users, so the `StatefulWidget`
+# wrapper + `BasicItem` preset (see `widget` module) ship out of the box.
+# Opt out with `default-features = false` for just the pure-u16 geometry core,
+# which is UI-framework agnostic and zero-dependency.
+default = ["ratatui"]
+ratatui = ["dep:ratatui"]
+
 [dependencies]
+ratatui = { version = "0.30", optional = true }
 
 [dev-dependencies]
 ratatui = "0.30"
-crossterm = "0.29"
+
+# The interactive demos render through the widget wrapper (default feature).
+[[example]]
+name = "ratatui_sidebar"
+required-features = ["ratatui"]
+
+[[example]]
+name = "preset"
+required-features = ["ratatui"]
