@@ -179,6 +179,7 @@ navigation step over them. The renderer reads `is_collapsible()` + the header's
 | `locate_row(global_idx)` | `RowLocation { section, row_in_section }` — section-scoped lookup. |
 | `scroll_offset(focused, viewport_height)` | Minimum offset to keep focus visible. |
 | `row_at_y(viewport_y, scroll_offset)` | Hit-test → global row index, or `None`. |
+| `RowDragState` | Tracks press/drag/release over the list's real row geometry and yields a `RowMove { from, to }`; headers and empty space retain the last valid target. |
 | `header_at_y(viewport_y, scroll_offset)` | Hit-test → section index of the divider at `y`, or `None`. |
 | `set_collapsible(bool)` / `is_collapsible()` | Toggle/query the collapse feature. Default off. |
 | `toggle_section(i)` / `set_collapsed(i, bool)` / `is_collapsed(i)` | Manage a section's collapsed state (`i` = 0-based header order). |
