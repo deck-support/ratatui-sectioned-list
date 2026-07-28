@@ -252,6 +252,60 @@ fn row_at_y_respects_scroll_offset() {
 }
 
 #[test]
+fn row_drag_tracks_variable_height_rows_and_finishes_once() {
+    let mut list = SectionedList::new();
+    list.push_header("h", 1);
+    list.push_row("a", 2);
+    list.push_row("b", 3);
+
+    let mut drag = RowDragState::new();
+    assert_eq!(drag.begin(&list, 1, 0), Some(0));
+    assert!(drag.is_active());
+    assert_eq!(drag.update(&list, 4, 0), Some(1));
+    assert_eq!(drag.target(), Some(1));
+    assert_eq!(drag.finish(), Some(RowMove { from: 0, to: 1 }));
+    assert!(!drag.is_active());
+    assert_eq!(drag.finish(), None);
+}
+
+#[test]
+fn row_drag_preserves_click_and_last_target_over_non_rows() {
+    let mut list = SectionedList::new();
+    list.push_header("first", 1);
+    list.push_row("a", 1);
+    list.push_header("second", 1);
+    list.push_row("b", 1);
+
+    let mut drag = RowDragState::new();
+    assert_eq!(drag.begin(&list, 1, 0), Some(0));
+    assert_eq!(drag.update(&list, 2, 0), Some(0)); // header
+    assert_eq!(drag.update(&list, 99, 0), Some(0)); // past the list
+    assert_eq!(drag.finish(), Some(RowMove { from: 0, to: 0 }));
+}
+
+#[test]
+fn row_drag_uses_scroll_and_rejects_hidden_rows() {
+    let mut list = SectionedList::new();
+    list.set_collapsible(true);
+    list.push_header("hidden", 1);
+    list.push_row("a", 1);
+    list.push_header("visible", 1);
+    list.push_row("b", 2);
+    assert!(list.set_collapsed(0, true));
+
+    let mut drag = RowDragState::new();
+    // With the first section collapsed, viewport row 1 is global row 1 (b).
+    assert_eq!(drag.begin(&list, 1, 1), Some(1));
+    assert_eq!(drag.source(), Some(1));
+    drag.cancel();
+    assert!(!drag.is_active());
+
+    // A header cannot start a drag and also clears stale state.
+    assert_eq!(drag.begin(&list, 0, 0), None);
+    assert_eq!(drag.finish(), None);
+}
+
+#[test]
 fn locate_row_returns_none_for_out_of_range() {
     let mut list = SectionedList::new();
     list.push_header("h", 1);

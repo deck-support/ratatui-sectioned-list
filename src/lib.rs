@@ -252,6 +252,101 @@ pub struct RowLocation {
     pub row_in_section: usize,
 }
 
+/// A completed row drag, expressed in global row indices (headers skipped).
+///
+/// `from == to` represents a press/release on the same row. Callers can use
+/// that distinction to preserve ordinary click behavior while also supporting
+/// drag-to-reorder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RowMove {
+    pub from: usize,
+    pub to: usize,
+}
+
+/// Pointer-drag state for a [`SectionedList`].
+///
+/// The list remains the source of truth for variable-height rows, collapsed
+/// sections, headers, and scrolling: callers feed viewport-relative pointer
+/// coordinates into [`begin`](Self::begin) and [`update`](Self::update), then
+/// consume the resulting [`RowMove`] with [`finish`](Self::finish). Moving
+/// across a header or outside the list keeps the last valid row as the target,
+/// which makes releasing between rows predictable.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RowDragState {
+    source: Option<usize>,
+    target: Option<usize>,
+}
+
+impl RowDragState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Start a drag on the row under `viewport_y`.
+    ///
+    /// Returns the hit row index, or `None` (and clears any previous drag) when
+    /// the coordinate lands on a header, inert margin, or empty space.
+    pub fn begin<T>(
+        &mut self,
+        list: &SectionedList<T>,
+        viewport_y: u16,
+        scroll_offset: u16,
+    ) -> Option<usize> {
+        let row = list.row_at_y(viewport_y, scroll_offset);
+        self.source = row;
+        self.target = row;
+        row
+    }
+
+    /// Update the drop target from the row under `viewport_y`.
+    ///
+    /// Returns the current target. When the pointer is over a header or empty
+    /// space, the last valid target is retained. No-op when no drag is active.
+    pub fn update<T>(
+        &mut self,
+        list: &SectionedList<T>,
+        viewport_y: u16,
+        scroll_offset: u16,
+    ) -> Option<usize> {
+        self.source?;
+        if let Some(row) = list.row_at_y(viewport_y, scroll_offset) {
+            self.target = Some(row);
+        }
+        self.target
+    }
+
+    /// Whether a row drag is currently active.
+    pub fn is_active(&self) -> bool {
+        self.source.is_some()
+    }
+
+    /// The row where the active drag began.
+    pub fn source(&self) -> Option<usize> {
+        self.source
+    }
+
+    /// The last valid row visited by the active drag.
+    pub fn target(&self) -> Option<usize> {
+        self.target
+    }
+
+    /// Finish the drag and clear the state.
+    pub fn finish(&mut self) -> Option<RowMove> {
+        let movement = self
+            .source
+            .zip(self.target)
+            .map(|(from, to)| RowMove { from, to });
+        self.cancel();
+        movement
+    }
+
+    /// Cancel the active drag without producing a move.
+    pub fn cancel(&mut self) {
+        self.source = None;
+        self.target = None;
+    }
+}
+
 /// A row payload that knows its own rendered height in terminal rows, so it can
 /// be added with [`SectionedList::push_row_auto`] instead of a hand-counted
 /// height. With the `ratatui` feature, [`BasicItem`] implements this as
